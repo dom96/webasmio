@@ -19,6 +19,7 @@ type
     Param,
     Drop,
     Emit,
+    Call,
   WatNode = ref object
     case kind: WatKind
     of Drop, Module: discard
@@ -34,6 +35,8 @@ type
       result: Option[ValueType]
     of Emit:
       wat: string
+    of Call:
+      callId: Indice
     children: seq[WatNode]
 
 proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
@@ -76,6 +79,10 @@ proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
       result.add repeat(" ", indent)
       result.add line.strip()
       result.add("\n")
+  of Call:
+    result.add "(call "
+    result.add "$"
+    result.add node.callId
 
   if newline and node.kind notin {Emit}:
     result.add("\n")
@@ -131,7 +138,19 @@ proc processParams(params: NimNode): (seq[WatNode], Option[ValueType]) =
         )
       )
 
+proc mangleName(name: string): string =
+  # https://www.w3.org/TR/wasm-core-1/#text-id
+  for c in name:
+    if c in {' ', '\'', '"', ',', ';', '[', ']', '{', '}'}:
+      result.add($c.int)
+    else:
+      result.add(c)
 
+proc initLocalsGet(varName: string): WatNode =
+  WatNode(
+    kind: Emit,
+    wat: "(local.get $" & mangleName(varName) & ")"
+  )
 
 proc processBody(node: NimNode): seq[WatNode] =
   case node.kind
@@ -146,8 +165,18 @@ proc processBody(node: NimNode): seq[WatNode] =
         wat: node[0][1].strVal
       )
     )
+  of nnkInfix:
+    let name = mangleName(node[0].strVal)
+    result.add(initLocalsGet(node[1].strVal))
+    result.add(initLocalsGet(node[2].strVal))
+    result.add(
+      WatNode(
+        kind: Call,
+        callId: name
+      )
+    )
   else:
-    assert false
+    assert false, $node.kind
 
 proc generateJsWasmCall(name: string, params: NimNode): NimNode =
   assert params.kind == nnkFormalParams
@@ -193,9 +222,9 @@ macro wasm*(node: untyped): untyped =
     result.addPragma(
       newIdentNode("exportc")
     )
+    hint("Webasmio: Generated stub " & name)
   else:
     result = newEmptyNode()
-  hint("Webasmio: Generated stub " & name)
   echo(result.toStrLit)
 
 macro compileDefinedFunctions*(): untyped =
