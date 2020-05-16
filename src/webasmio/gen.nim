@@ -165,10 +165,10 @@ proc processBody(node: NimNode): seq[WatNode] =
         wat: node[0][1].strVal
       )
     )
-  of nnkInfix:
+  of nnkInfix, nnkCall:
     let name = mangleName(node[0].strVal)
-    result.add(initLocalsGet(node[1].strVal))
-    result.add(initLocalsGet(node[2].strVal))
+    for i in 1 ..< node.len:
+      result.add(initLocalsGet(node[i].strVal))
     result.add(
       WatNode(
         kind: Call,
