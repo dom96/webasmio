@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Webasmio</title>
+
+    <!-- Depend on binaryen for now to convert WAT to WASM. -->
+    <script src="https://unpkg.com/binaryen@v93.0.0/index.js"></script>
+
+    <script>
+        // Create a module from a WebAssembly Text format: https://stackoverflow.com/a/60921153/492186
+        var myModule = binaryen.parseText(`(module
+            (type $i32_i32_=>_i32 (func (param i32 i32) (result i32)))
+            (export "add" (func $add))
+            (func $add (; 0 ;) (; has Stack IR ;) (param $0 i32) (param $1 i32) (result i32)
+                (i32.add
+                    (local.get $0)
+                    (local.get $1)
+                )
+            )
+        )`);
+
+        // Emit module in a binary format
+        var wasmData = myModule.emitBinary();
+
+        // Use WebAssembly API to instantiate a compiled module
+        var compiled = new WebAssembly.Module(wasmData);
+        var instance = new WebAssembly.Instance(compiled, {});
+
+        // And use it
+        console.log(instance.exports.add(41, 1));
+
+    </script>
+  </head>
+  <body style="margin: 0; overflow: hidden;">
+
+  </body>
+</html>
