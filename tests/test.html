@@ -7,25 +7,9 @@
 
     <!-- Depend on WABT for now to convert WAST to WASM. -->
     <script src="https://unpkg.com/wabt@v1.0.15/index.js"></script>
-
+    <script src="./test1.js"></script>
     <script>
-        // Create a module from a WebAssembly Text format: https://stackoverflow.com/a/60921153/492186
-        var myModule = WabtModule().parseWat("file.wat", `(module
-        (func $add (export "add")(param $lhs i32) (param $rhs i32) (result i32)    (local.get $lhs)
-    (local.get $rhs)
-    (i32.add)
-  )
-        )`, {});
-
-        // Emit module in a binary format
-        var wasmData = myModule.toBinary({}).buffer;
-
-        // Use WebAssembly API to instantiate a compiled module
-        var compiled = new WebAssembly.Module(wasmData);
-        var instance = new WebAssembly.Instance(compiled, {});
-
-        // And use it
-        console.log(instance.exports.add(41, 1));
+        console.log(add(41, 1));
 
     </script>
   </head>

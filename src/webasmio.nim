@@ -1,7 +1,10 @@
 # when not defined(js):
 #   {.error: "Webasmio is only support via the JS backend.".}
 
-import macros, options, sequtils, sugar, strutils
+import macros, options, sequtils, sugar, strutils, strformat
+import macrocache
+
+import webasmio/webassembly
 
 type
   # https://www.w3.org/TR/wasm-core-1/#text-id
@@ -148,24 +151,101 @@ proc processBody(node: NimNode): seq[WatNode] =
   else:
     assert false
 
+proc generateJsWasmCall(name: string, params: NimNode): NimNode =
+  assert params.kind == nnkFormalParams
+  var javascript = ""
+  javascript.add fmt"""
+    `result` = gWebasmioInstance.exports.{name}(
+  """
+  # TODO: Refactor this code, similar one is used above.
+  for i in 1 ..< params.len:
+    let defs = params[i]
+    assert defs.kind == nnkIdentDefs
+    let idents = defs[0 .. ^3]
+    for ident in idents:
+      javascript.add "`"
+      javascript.add ident.strVal
+      javascript.add "`,"
+      javascript.add "\n"
+
+  javascript.add(");")
+  return quote do:
+    {.emit: `javascript`.}
+
+const definedFunctions = CacheSeq"webasmio.funcs"
+var gWebasmioInstance {.exportc.}: WebAssemblyInstance
 macro wasm*(node: untyped): untyped =
   if node.kind != nnkProcDef:
     error("{.wasm.} can only be applied to procedures.")
-  echo treeRepr(node)
+
+  definedFunctions.add(node.copyNimTree)
 
   let name = $node.name
   let exported = getExportWasm(node.pragma, name)
-  let (params, retType) = processParams(node.params)
-  let children = processBody(node.body)
-  var watNode = WatNode(
-    kind: Func,
-    funcId: some(name),
-    `export`: exported,
-    params: params,
-    result: retType,
-    children: children,
-  )
 
+  # If this has been exported then we create a JS stub.
+  if exported.isSome():
+    result = node
+    result.body = generateJsWasmCall(name, node.params)
+    let pragmas = result.pragma
+    result.pragma = newEmptyNode() # TODO: Remove exportwasm only.
+    for pragma in pragmas:
+      if pragma.kind == nnkIdent and pragma.strVal != "exportwasm":
+        result.pragma.add(pragma)
+    result.addPragma(
+      newIdentNode("exportc")
+    )
+  else:
+    result = newEmptyNode()
+  hint("Webasmio: Generated stub " & name)
+  echo(result.toStrLit)
+
+macro compileDefinedFunctions*(): untyped =
+  var watModule = WatNode(
+    kind: Module,
+  )
+  for node in definedFunctions:
+    let name = $node.name
+    hint("Webasmio: Compiling " & name)
+    echo treeRepr(node)
+    let exported = getExportWasm(node.pragma, name)
+    let (params, retType) = processParams(node.params)
+    let children = processBody(node.body)
+    var watNode = WatNode(
+      kind: Func,
+      funcId: some(name),
+      `export`: exported,
+      params: params,
+      result: retType,
+      children: children,
+    )
+
+    watModule.children.add(watNode)
   var text = ""
-  toWAT(watNode, text, newline=true)
-  echo(text )
+  toWAT(watModule, text, newline=true)
+  echo(text)
+
+  let jsToEmit = """
+    // Create a module from a WebAssembly Text format: https://stackoverflow.com/a/60921153/492186
+    var myModule = WabtModule().parseWat("nim.wat", ``
+      $#
+    ``, {});
+
+    // Emit module in a binary format
+    var wasmData = myModule.toBinary({}).buffer;
+
+    // Use WebAssembly API to instantiate a compiled module
+    var compiled = new WebAssembly.Module(wasmData);
+    gWebasmioInstance = new WebAssembly.Instance(compiled, {});
+  """ % [text]
+  let strNode = newNimNode(nnkTripleStrLit)
+  strNode.strVal = jsToEmit
+  result = newTree(
+    nnkPragma,
+    newTree(
+      nnkExprColonExpr,
+      newIdentNode("emit"),
+      strNode
+    )
+  )
+  echo(result.toStrLit)
