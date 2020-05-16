@@ -35,7 +35,8 @@ type
       wat: string
     children: seq[WatNode]
 
-proc toWAT(node: WatNode, result: var string) =
+proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
+  result.add repeat(" ", indent)
   case node.kind
   of Drop:
     result.add "(drop "
@@ -61,6 +62,7 @@ proc toWAT(node: WatNode, result: var string) =
       result.add " "
     if node.`export`.isSome():
       toWAT(node.`export`.get(), result)
+      result.add " "
     for param in node.params:
       toWAT(param, result)
       result.add " "
@@ -69,10 +71,15 @@ proc toWAT(node: WatNode, result: var string) =
       result.add $node.result.get()
       result.add ")"
   of Emit:
-    result.add node.wat
+    for line in node.wat.splitLines:
+      result.add repeat(" ", indent)
+      result.add line.strip()
+      result.add("\n")
 
+  if newline and node.kind notin {Emit}:
+    result.add("\n")
   for child in node.children:
-    toWAT(child, result)
+    toWAT(child, result, indent + 2, newline=true)
 
   if node.kind notin {Emit}:
     result.add ")"
@@ -160,5 +167,5 @@ macro wasm*(node: untyped): untyped =
   )
 
   var text = ""
-  toWAT(watNode, text)
-  echo(text)
+  toWAT(watNode, text, newline=true)
+  echo(text )
