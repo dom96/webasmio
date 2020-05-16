@@ -6,7 +6,7 @@ description   = "A prototype library for selectively compiling Nim functions int
 license       = "MPL-2.0"
 srcDir        = "src"
 
-
+backend = "js"
 
 # Dependencies
 

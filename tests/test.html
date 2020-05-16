@@ -11,11 +11,10 @@
     <script>
         // Create a module from a WebAssembly Text format: https://stackoverflow.com/a/60921153/492186
         var myModule = WabtModule().parseWat("file.wat", `(module
-            (func $add (param $lhs i32) (param $rhs i32) (result i32)
-                local.get $lhs
-                local.get $rhs
-                i32.add)
-            (export "add" (func $add))
+        (func $add (export "add")(param $lhs i32) (param $rhs i32) (result i32)    (local.get $lhs)
+    (local.get $rhs)
+    (i32.add)
+  )
         )`, {});
 
         // Emit module in a binary format
