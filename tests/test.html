@@ -5,24 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Webasmio</title>
 
-    <!-- Depend on binaryen for now to convert WAT to WASM. -->
-    <script src="https://unpkg.com/binaryen@v93.0.0/index.js"></script>
+    <!-- Depend on WABT for now to convert WAST to WASM. -->
+    <script src="https://unpkg.com/wabt@v1.0.15/index.js"></script>
 
     <script>
         // Create a module from a WebAssembly Text format: https://stackoverflow.com/a/60921153/492186
-        var myModule = binaryen.parseText(`(module
-            (type $i32_i32_=>_i32 (func (param i32 i32) (result i32)))
+        var myModule = WabtModule().parseWat("file.wat", `(module
+            (func $add (param $lhs i32) (param $rhs i32) (result i32)
+                local.get $lhs
+                local.get $rhs
+                i32.add)
             (export "add" (func $add))
-            (func $add (; 0 ;) (; has Stack IR ;) (param $0 i32) (param $1 i32) (result i32)
-                (i32.add
-                    (local.get $0)
-                    (local.get $1)
-                )
-            )
-        )`);
+        )`, {});
 
         // Emit module in a binary format
-        var wasmData = myModule.emitBinary();
+        var wasmData = myModule.toBinary({}).buffer;
 
         // Use WebAssembly API to instantiate a compiled module
         var compiled = new WebAssembly.Module(wasmData);
