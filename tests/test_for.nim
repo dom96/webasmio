@@ -3,7 +3,7 @@
 from system import nil
 import webasmio
 
-proc test(lhs, rhs: int32): float32 {.wasm, exportwasm.} =
+proc test(lhs, rhs: int32): int32 {.wasm, exportwasm.} =
   var i = 0'i32
   while i < 10'i32:
     result = result + 5

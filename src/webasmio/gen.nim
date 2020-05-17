@@ -231,6 +231,8 @@ proc mangleFuncName(name: NimNode, formalParams: NimNode): string =
       for i in 0 ..< child.len-2:
         result.add(child[^2].strVal)
         result.add "_"
+    elif child.kind == nnkEmpty:
+      result.add("void")
     else: assert false, $child.kind
 
 proc initLocalsGet(varName: string): WatNode =
@@ -489,7 +491,7 @@ macro compileDefinedFunctions*(): untyped =
     let (params, retType) = processParams(node.params)
     var locals: seq[WatNode]
     var children = processBody(node.body, locals)
-    if node[7].kind != nnkEmpty:
+    if node.len > 7 and node[7].kind != nnkEmpty:
       locals.add(initLocal(node[7]))
       # Hack: We assume that we do not need to push the `result` var onto the
       # stack if emit is the only node in the proc.

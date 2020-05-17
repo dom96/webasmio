@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Webasmio - Fib benchmark</title>
+
+    <!-- Depend on WABT for now to convert WAST to WASM. -->
+    <script src="https://unpkg.com/wabt@v1.0.15/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/benchmark/2.1.4/benchmark.min.js"></script>
+    <script src="./fib.js"></script>
+    <!-- <script src="./fib_js.js"></script> -->
+    <script>
+        function fib_js_native(n) {
+            var a = 0
+            var b = 1
+            var i = 0
+            while (i < n) {
+                let t = a + b;
+                a = b;
+                b = t;
+                i = i + 1;
+            }
+
+            return b;
+        }
+
+        var suite = new Benchmark.Suite;
+        console.log(fib_webasm(40));
+        // add tests
+        suite.add('webasm', function() {
+            fib_webasm(40);
+        })
+        // .add('js', function() {
+        //     fib_js(40);
+        // })
+        .add('js_native', function() {
+            fib_js_native(40);
+        })
+        // add listeners
+        .on('cycle', function(event) {
+        console.log(String(event.target));
+        })
+        .on('complete', function() {
+        console.log('Fastest is ' + this.filter('fastest').map('name'));
+        })
+        // run async
+        .run({ 'async': true });
+
+    </script>
+  </head>
+  <body style="margin: 0; overflow: hidden;">
+
+  </body>
+</html>
