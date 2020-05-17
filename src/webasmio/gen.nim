@@ -129,7 +129,7 @@ proc getExportWasm(pragma: NimNode, procName: string): Option[WatNode] =
         return some(WatNode(kind: Export, name: procName))
 
 proc toValueType(node: NimNode): ValueType =
-  if node.kind == nnkIdent:
+  if node.kind in {nnkIdent, nnkSym}:
     case node.strVal.normalize()
     of "int32":
       ValueType.i32
@@ -178,7 +178,7 @@ proc processParams(params: NimNode): (seq[WatNode], Option[ValueType]) =
 
   # Return value
   let retType = params[0]
-  assert retType.kind in {nnkIdent, nnkEmpty}
+  assert retType.kind in {nnkSym, nnkIdent, nnkEmpty}
   if retType.kind != nnkEmpty:
     result[1] = some(toValueType(retType))
 
@@ -204,6 +204,19 @@ proc mangleName(name: string): string =
       result.add($c.int)
     else:
       result.add(c)
+
+proc mangleFuncName(name: NimNode, formalParams: NimNode): string =
+  result = mangleName(name.strVal)
+  result.add "_"
+  for child in formalParams:
+    if child.kind == nnkSym:
+      result.add(child.strVal)
+      result.add "_"
+    elif child.kind == nnkIdentDefs:
+      for i in 0 ..< child.len-2:
+        result.add(child[^2].strVal)
+        result.add "_"
+    else: assert false, $child.kind
 
 proc initLocalsGet(varName: string): WatNode =
   WatNode(
@@ -231,7 +244,7 @@ proc initLocal(identDefs: NimNode): WatNode =
 
 proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
   case node.kind
-  of nnkIdent:
+  of nnkIdent, nnkSym:
     result.add(initLocalsGet(node.strVal))
   of nnkStmtList:
     for child in node.children:
@@ -241,11 +254,13 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
     result.add(
       WatNode(
         kind: Emit,
-        wat: node[0][1].strVal
+        wat: node[0][1][0].strVal
       )
     )
   of nnkInfix, nnkCall:
-    let name = mangleName(node[0].strVal)
+    let procTyp = getTypeImpl(node[0])
+    assert procTyp[0].kind == nnkFormalParams
+    let name = mangleFuncName(node[0], procTyp[0])
     for i in 1 ..< node.len:
       result.add(processBody(node[i], locals))
     result.add(
@@ -283,7 +298,8 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
     )
   of nnkReturnStmt:
     var retNode = WatNode(kind: Return)
-    retNode.children.add processBody(node[0], locals)
+    assert node[0].kind == nnkAsgn # Assuming this is Asgn -> (Sym "result", expr)
+    retNode.children.add processBody(node[0][1], locals)
     result.add(retNode)
   # of nnkForStmt:
   #   assert node[0].kind == nnkIdent
@@ -318,28 +334,28 @@ proc generateJsWasmCall(name: string, params: NimNode): NimNode =
   return quote do:
     {.emit: `javascript`.}
 
+template exportwasm* {.pragma.}
+
 const definedFunctions = CacheSeq"webasmio.funcs"
 var gWebasmioInstance {.exportc.}: WebAssemblyInstance
-macro wasm*(node: untyped): untyped =
+macro wasm*(node: typed): untyped =
   if node.kind != nnkProcDef:
     error("{.wasm.} can only be applied to procedures.")
 
-  definedFunctions.add(node.copyNimTree)
+  definedFunctions.add(node)
 
   let name = $node.name
   let exported = getExportWasm(node.pragma, name)
 
   # If this has been exported then we create a JS stub.
   if exported.isSome():
-    result = node
-    result.body = generateJsWasmCall(name, node.params)
-    let pragmas = result.pragma
-    result.pragma = newEmptyNode() # TODO: Remove exportwasm only.
-    for pragma in pragmas:
-      if pragma.kind == nnkIdent and pragma.strVal != "exportwasm":
-        result.pragma.add(pragma)
-    result.addPragma(
-      newIdentNode("exportc")
+    result = newProc(
+      name = newIdentNode(name & "_js_stub"),
+      params = toSeq(node.params.children),
+      body = generateJsWasmCall(name, node.params),
+      pragmas = newTree(nnkPragma,
+        newTree(nnkExprColonExpr, newIdentNode("exportc"), newStrLitNode(name))
+      )
     )
     hint("Webasmio: Generated stub " & name)
   else:
@@ -360,7 +376,7 @@ macro compileDefinedFunctions*(): untyped =
     let children = processBody(node.body, locals)
     var watNode = WatNode(
       kind: Func,
-      funcId: some(name),
+      funcId: some(mangleFuncName(node.name, node.params)),
       `export`: exported,
       params: params,
       result: retType,
