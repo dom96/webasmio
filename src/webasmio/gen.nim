@@ -24,10 +24,13 @@ type
     Loop,
     Br,
     Br_if,
-    Return
+    Return,
+    WasmCall
   WatNode = ref object
     case kind: WatKind
-    of Drop, Module, Loop, Return: discard
+    of Drop, Module, Return: discard
+    of WasmCall:
+      callName: string
     of Export:
       name: string
     of Param:
@@ -49,6 +52,8 @@ type
       brId: Indice
     of Br_if:
       brIfId: Indice
+    of Loop:
+      loopId: Option[Indice]
     children: seq[WatNode]
 
 proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
@@ -104,12 +109,22 @@ proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
       result.add node.blockId.get()
   of Loop:
     result.add "(loop "
+    if node.loopId.isSome():
+      result.add "$"
+      result.add node.loopId.get()
   of Br_if:
     result.add "(br_if "
+    result.add "$"
+    result.add node.brIfId
   of Br:
     result.add "(br "
+    result.add "$"
+    result.add node.brId
   of Return:
     result.add "(return "
+  of WasmCall:
+    result.add "("
+    result.add node.callName
 
   if newline and node.kind notin {Emit}:
     result.add("\n")
@@ -131,7 +146,7 @@ proc getExportWasm(pragma: NimNode, procName: string): Option[WatNode] =
 proc toValueType(node: NimNode): ValueType =
   if node.kind in {nnkIdent, nnkSym}:
     case node.strVal.normalize()
-    of "int32":
+    of "int32", "bool":
       ValueType.i32
     of "int64", "int": # TODO: Allowing `int` here may lead to bugs.
       ValueType.i64
@@ -231,16 +246,24 @@ proc initLocalsSet(varName: string): WatNode =
   )
 
 proc initLocal(identDefs: NimNode): WatNode =
-  assert identDefs.kind == nnkIdentDefs
-  var valueType: ValueType
-  if identDefs[1].kind != nnkEmpty:
-    valueType = toValueType(identDefs[1])
-  else:
-    valueType = toValueType(identDefs[2])
-  return WatNode(
-    kind: Emit,
-    wat: fmt"(local ${mangleName(identDefs[0].strVal)} {$valueType})"
-  )
+  case identDefs.kind
+  of nnkIdentDefs:
+    var valueType: ValueType
+    if identDefs[1].kind != nnkEmpty:
+      valueType = toValueType(identDefs[1])
+    else:
+      valueType = toValueType(identDefs[2])
+    return WatNode(
+      kind: Emit,
+      wat: fmt"(local ${mangleName(identDefs[0].strVal)} {$valueType})"
+    )
+  of nnkSym:
+    let valueType = toValueType(getType(identDefs))
+    return WatNode(
+      kind: Emit,
+      wat: fmt"(local ${mangleName(identDefs.strVal)} {$valueType})"
+    )
+  else: assert false
 
 proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
   case node.kind
@@ -296,6 +319,9 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
         wat: "(f64.const " & $node.floatVal & ")"
       )
     )
+  of nnkAsgn:
+    result.add processBody(node[1], locals)
+    result.add initLocalsSet(node[0].strVal) # TODO: more complex assignments.
   of nnkReturnStmt:
     var retNode = WatNode(kind: Return)
     assert node[0].kind == nnkAsgn # Assuming this is Asgn -> (Sym "result", expr)
@@ -348,14 +374,31 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
           "f32.demote_f64"
         of f64:
           "nop"
-    result.add processBody(node[1], locals)
-    result.add(
-      WatNode(
-        kind: Emit,
-        wat: fmt"({convFunc})"
-      )
+    var callNode = WatNode(
+      kind: WasmCall,
+      callName: convFunc
     )
-  # of nnkForStmt:
+    callNode.children.add processBody(node[1], locals)
+    result.add(callNode)
+  of nnkWhileStmt:
+    var outerBlockStmt = WatNode(
+      kind: Block,
+      blockId: some("loop_terminate")
+    )
+    var loopStmt = WatNode(kind: Loop, loopId: some("loop_continue"))
+    outerBlockStmt.children.add(loopStmt)
+    loopStmt.children.add(processBody(node[0], locals)) # Condition
+    loopStmt.children.add(WatNode(kind: Emit, wat: "(i32.const 1)(i32.ne)")) # Negate
+    loopStmt.children.add(WatNode(kind: Br_if, brIfId: outerBlockStmt.blockId.get()))
+
+    loopStmt.children.add(processBody(node[1], locals)) # While loop body
+    loopStmt.children.add(WatNode(kind: Br, brId: loopStmt.loopId.get())) # Loop
+
+    result.add(outerBlockStmt)
+
+  of nnkForStmt:
+    echo(treeRepr(node))
+    echo(treeRepr(getTypeImpl(node[1][0])))
   #   assert node[0].kind == nnkIdent
   #   let iterVarName = node[0].strVal
   #   if node[1].kind == nnkInfix:
@@ -391,11 +434,9 @@ proc generateJsWasmCall(name: string, params: NimNode): NimNode =
 template exportwasm* {.pragma.}
 
 const definedFunctions = CacheSeq"webasmio.funcs"
+const definedIterators = CacheTable"webasmio.iters"
 var gWebasmioInstance {.exportc.}: WebAssemblyInstance
-macro wasm*(node: typed): untyped =
-  if node.kind != nnkProcDef:
-    error("{.wasm.} can only be applied to procedures.")
-
+proc processWasmProc(node: NimNode): NimNode =
   definedFunctions.add(node)
 
   let name = $node.name
@@ -416,6 +457,23 @@ macro wasm*(node: typed): untyped =
     result = newEmptyNode()
   echo(result.toStrLit)
 
+proc processWasmIterator(node: NimNode): NimNode =
+  echo treeRepr(node)
+  # definedIterators.add()
+  result = newEmptyNode()
+
+macro wasm*(node: typed): untyped =
+  if node.kind notin {nnkProcDef, nnkIteratorDef}:
+    error("{.wasm.} can only be applied to procedures or iterators.")
+
+  case node.kind
+  of nnkProcDef:
+    return processWasmProc(node)
+  of nnkIteratorDef:
+    return processWasmIterator(node)
+  else:
+    error("{.wasm.} can only be applied to procedures or iterators.")
+
 macro compileDefinedFunctions*(): untyped =
   var watModule = WatNode(
     kind: Module,
@@ -427,7 +485,13 @@ macro compileDefinedFunctions*(): untyped =
     let exported = getExportWasm(node.pragma, name)
     let (params, retType) = processParams(node.params)
     var locals: seq[WatNode]
-    let children = processBody(node.body, locals)
+    var children = processBody(node.body, locals)
+    if node[7].kind != nnkEmpty:
+      locals.add(initLocal(node[7]))
+      # Hack: We assume that we do not need to push the `result` var onto the
+      # stack if emit is the only node in the proc.
+      if not (children.len == 1 and children[0].kind == Emit):
+        children.add(initLocalsGet(mangleName(node[7].strVal)))
     var watNode = WatNode(
       kind: Func,
       funcId: some(mangleFuncName(node.name, node.params)),

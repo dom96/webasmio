@@ -1,12 +1,12 @@
-# nim js --out:.\tests\test1.js .\tests\test_conv
+# nim js --out:.\tests\test1.js .\tests\test_for
 
 from system import nil
 import webasmio
 
 proc test(lhs, rhs: int32): float32 {.wasm, exportwasm.} =
-  var
-    x = 52'i32
-    z = 12_345'i64
-  return float32(x + z) + 1_000.5
+  var i = 0'i32
+  while i < 10'i32:
+    result = result + 5
+    i = i + 1
 
 webasmio.compileDefinedFunctions()

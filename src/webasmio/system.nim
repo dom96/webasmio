@@ -8,6 +8,8 @@ type
 
 # TODO: Get rid of the repetition in this code.
 
+# Functions dealing with numbers.
+
 proc `+`*(lhs, rhs: int32): int32 {.wasm.} =
   {.emit: """
     (i32.add (local.get $lhs) (local.get $rhs))
@@ -67,3 +69,42 @@ proc `*`*(lhs, rhs: float32): float32 {.wasm.} =
   {.emit: """
     (f32.mul (local.get $lhs) (local.get $rhs))
   """.}
+
+# Conditions
+
+proc `<`*(lhs, rhs: int32): bool {.wasm.} =
+  {.emit: """
+    (i32.lt_s (local.get $lhs) (local.get $rhs))
+  """.}
+
+proc `>`*(lhs, rhs: int32): bool {.wasm.} =
+  {.emit: """
+    (i32.gt_s (local.get $lhs) (local.get $rhs))
+  """.}
+
+proc `<=`*(lhs, rhs: int32): bool {.wasm.} =
+  {.emit: """
+    (i32.le_s (local.get $lhs) (local.get $rhs))
+  """.}
+
+proc `>=`*(lhs, rhs: int32): bool {.wasm.} =
+  {.emit: """
+    (i32.ge_s (local.get $lhs) (local.get $rhs))
+  """.}
+
+proc `==`*(lhs, rhs: int32): bool {.wasm.} =
+  {.emit: """
+    (i32.eq (local.get $lhs) (local.get $rhs))
+  """.}
+
+proc `!=`*(lhs, rhs: int32): bool {.wasm.} =
+  {.emit: """
+    (i32.ne (local.get $lhs) (local.get $rhs))
+  """.}
+
+# Iterators.
+iterator `..<`*(a, b: int64): int64 {.inline, wasm.} =
+  var i = a
+  while i < b:
+    yield i
+    i = system.`+`(i, 1) # TODO: Rename this module so we can exclude the real `system`
