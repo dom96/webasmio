@@ -170,7 +170,7 @@ proc toValueType(node: NimNode): ValueType =
       nnkUInt32Lit, nnkUInt64Lit, nnkFloat128Lit:
       error("These integer types are not supported by WASM."); ValueType.i32
     else:
-      assert false; ValueType.i32
+      assert false, $node.kind; ValueType.i32
 
 proc toValueType(typeKind: NimTypeKind): ValueType =
   case typeKind
@@ -252,7 +252,7 @@ proc initLocal(identDefs: NimNode): WatNode =
     if identDefs[1].kind != nnkEmpty:
       valueType = toValueType(identDefs[1])
     else:
-      valueType = toValueType(identDefs[2])
+      valueType = toValueType(getType(identDefs[2]))
     return WatNode(
       kind: Emit,
       wat: fmt"(local ${mangleName(identDefs[0].strVal)} {$valueType})"
@@ -292,7 +292,7 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
         callId: name
       )
     )
-  of nnkVarSection:
+  of nnkVarSection, nnkLetSection:
     for identDefs in node:
       assert identDefs.kind == nnkIdentDefs
       locals.add(initLocal(identDefs))
@@ -399,6 +399,9 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
   of nnkForStmt:
     echo(treeRepr(node))
     echo(treeRepr(getTypeImpl(node[1][0])))
+    # TODO: Use the `definedIterators` list, inline the defined iterator, set up
+    # its inputs on the stack.
+    assert false, "For loops not implemented"
   #   assert node[0].kind == nnkIdent
   #   let iterVarName = node[0].strVal
   #   if node[1].kind == nnkInfix:
