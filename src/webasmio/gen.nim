@@ -133,14 +133,14 @@ proc toValueType(node: NimNode): ValueType =
     case node.strVal.normalize()
     of "int32":
       ValueType.i32
-    of "int64":
+    of "int64", "int": # TODO: Allowing `int` here may lead to bugs.
       ValueType.i64
-    of "float64":
+    of "float64", "float":
       ValueType.f64
     of "float32":
       ValueType.f32
     else:
-      assert false; ValueType.i32
+      assert false, $node.strVal; ValueType.i32
   else:
     case node.kind
     of nnkInt32Lit:
@@ -301,6 +301,60 @@ proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
     assert node[0].kind == nnkAsgn # Assuming this is Asgn -> (Sym "result", expr)
     retNode.children.add processBody(node[0][1], locals)
     result.add(retNode)
+  of nnkHiddenStdConv, nnkConv:
+    let convertFromType = toValueType(getTypeImpl(node[1]))
+    let convertToType =
+      if node[0].kind == nnkSym: toValueType(node[0])
+      else: toValueType(getTypeImpl(node))
+    let convFunc =
+      case convertFromType
+      of i32:
+        case convertToType
+        of i64:
+          "i64.extend_i32_s"
+        of i32:
+          "nop"
+        of f32:
+          "f32.convert_i32_s"
+        of f64:
+          "f64.convert_i32_s"
+      of i64:
+        case convertToType
+        of i64:
+          "nop"
+        of i32:
+          "i32.wrap_i64"
+        of f32:
+          "f32.convert_i64_s"
+        of f64:
+          "f64.convert_i64_s"
+      of f32:
+        case convertToType
+        of i64:
+          "i32.trunc_f32_s"
+        of i32:
+          "i64.trunc_f32_s"
+        of f32:
+          "nop"
+        of f64:
+          "f64.promote_f32"
+      of f64:
+        case convertToType
+        of i64:
+          "i32.trunc_f64_s"
+        of i32:
+          "i64.trunc_f64_s"
+        of f32:
+          "f32.demote_f64"
+        of f64:
+          "nop"
+    result.add processBody(node[1], locals)
+    result.add(
+      WatNode(
+        kind: Emit,
+        wat: fmt"({convFunc})"
+      )
+    )
   # of nnkForStmt:
   #   assert node[0].kind == nnkIdent
   #   let iterVarName = node[0].strVal
