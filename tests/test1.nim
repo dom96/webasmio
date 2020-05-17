@@ -1,3 +1,5 @@
+# nim js --out:.\tests\test1.js .\tests\test1
+
 from system import nil
 import webasmio
 

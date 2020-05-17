@@ -20,9 +20,14 @@ type
     Drop,
     Emit,
     Call,
+    Block,
+    Loop,
+    Br,
+    Br_if,
+    Return
   WatNode = ref object
     case kind: WatKind
-    of Drop, Module: discard
+    of Drop, Module, Loop, Return: discard
     of Export:
       name: string
     of Param:
@@ -33,10 +38,17 @@ type
       `export`: Option[WatNode]
       params: seq[WatNode]
       result: Option[ValueType]
+      locals: seq[WatNode]
     of Emit:
       wat: string
     of Call:
       callId: Indice
+    of Block:
+      blockId: Option[Indice]
+    of Br:
+      brId: Indice
+    of Br_if:
+      brIfId: Indice
     children: seq[WatNode]
 
 proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
@@ -74,6 +86,8 @@ proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
       result.add "(result "
       result.add $node.result.get()
       result.add ")"
+    for local in node.locals:
+      toWAT(local, result, indent + 2, newline=true)
   of Emit:
     for line in node.wat.splitLines:
       result.add repeat(" ", indent)
@@ -83,6 +97,19 @@ proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
     result.add "(call "
     result.add "$"
     result.add node.callId
+  of Block:
+    result.add "(block "
+    if node.blockId.isSome():
+      result.add "$"
+      result.add node.blockId.get()
+  of Loop:
+    result.add "(loop "
+  of Br_if:
+    result.add "(br_if "
+  of Br:
+    result.add "(br "
+  of Return:
+    result.add "(return "
 
   if newline and node.kind notin {Emit}:
     result.add("\n")
@@ -101,16 +128,48 @@ proc getExportWasm(pragma: NimNode, procName: string): Option[WatNode] =
       if child.strVal.normalize() == "exportwasm":
         return some(WatNode(kind: Export, name: procName))
 
-proc toValueType(ident: NimNode): ValueType =
-  case ident.strVal.normalize()
-  of "int32":
+proc toValueType(node: NimNode): ValueType =
+  if node.kind == nnkIdent:
+    case node.strVal.normalize()
+    of "int32":
+      ValueType.i32
+    of "int64":
+      ValueType.i64
+    of "float64":
+      ValueType.f64
+    of "float32":
+      ValueType.f32
+    else:
+      assert false; ValueType.i32
+  else:
+    case node.kind
+    of nnkInt32Lit:
+      ValueType.i32
+    of nnkIntLit, nnkInt64Lit:
+      ValueType.i64
+    of nnkFloatLit, nnkFloat64Lit:
+      ValueType.f64
+    of nnkFloat32Lit:
+      ValueType.f32
+    of nnkInt8Lit, nnkInt16Lit, nnkUIntLit, nnkUInt8Lit, nnkUInt16Lit,
+      nnkUInt32Lit, nnkUInt64Lit, nnkFloat128Lit:
+      error("These integer types are not supported by WASM."); ValueType.i32
+    else:
+      assert false; ValueType.i32
+
+proc toValueType(typeKind: NimTypeKind): ValueType =
+  case typeKind
+  of ntyInt32:
     ValueType.i32
-  of "int64":
+  of ntyInt, ntyInt64:
     ValueType.i64
-  of "float64":
+  of ntyFloat, ntyFloat64:
     ValueType.f64
-  of "float32":
+  of ntyFloat32:
     ValueType.f32
+  of ntyInt8, ntyInt16, ntyFloat128, ntyUInt, ntyUInt8,
+     ntyUInt16, ntyUInt32, ntyUInt64:
+    error("These integer types are not supported by WASM."); ValueType.i32
   else:
     assert false; ValueType.i32
 
@@ -152,11 +211,31 @@ proc initLocalsGet(varName: string): WatNode =
     wat: "(local.get $" & mangleName(varName) & ")"
   )
 
-proc processBody(node: NimNode): seq[WatNode] =
+proc initLocalsSet(varName: string): WatNode =
+  WatNode(
+    kind: Emit,
+    wat: "(local.set $" & mangleName(varName) & ")"
+  )
+
+proc initLocal(identDefs: NimNode): WatNode =
+  assert identDefs.kind == nnkIdentDefs
+  var valueType: ValueType
+  if identDefs[1].kind != nnkEmpty:
+    valueType = toValueType(identDefs[1])
+  else:
+    valueType = toValueType(identDefs[2])
+  return WatNode(
+    kind: Emit,
+    wat: fmt"(local ${mangleName(identDefs[0].strVal)} {$valueType})"
+  )
+
+proc processBody(node: NimNode, locals: var seq[WatNode]): seq[WatNode] =
   case node.kind
+  of nnkIdent:
+    result.add(initLocalsGet(node.strVal))
   of nnkStmtList:
     for child in node.children:
-      result.add processBody(child)
+      result.add processBody(child, locals)
   of nnkPragma:
     assert node[0].kind == nnkExprColonExpr and node[0][0].strVal == "emit"
     result.add(
@@ -168,13 +247,53 @@ proc processBody(node: NimNode): seq[WatNode] =
   of nnkInfix, nnkCall:
     let name = mangleName(node[0].strVal)
     for i in 1 ..< node.len:
-      result.add(initLocalsGet(node[i].strVal))
+      result.add(processBody(node[i], locals))
     result.add(
       WatNode(
         kind: Call,
         callId: name
       )
     )
+  of nnkVarSection:
+    for identDefs in node:
+      assert identDefs.kind == nnkIdentDefs
+      locals.add(initLocal(identDefs))
+      result.add processBody(identDefs[2], locals)
+      result.add initLocalsSet(identDefs[0].strVal)
+  of nnkIntLit, nnkInt64Lit:
+    result.add(
+      WatNode(
+        kind: Emit,
+        wat: "(i64.const " & $node.intVal & ")"
+      )
+    )
+  of nnkInt32Lit:
+    result.add(
+      WatNode(
+        kind: Emit,
+        wat: "(i32.const " & $node.intVal & ")"
+      )
+    )
+  of nnkFloatLit:
+    result.add(
+      WatNode(
+        kind: Emit,
+        wat: "(f64.const " & $node.floatVal & ")"
+      )
+    )
+  of nnkReturnStmt:
+    var retNode = WatNode(kind: Return)
+    retNode.children.add processBody(node[0], locals)
+    result.add(retNode)
+  # of nnkForStmt:
+  #   assert node[0].kind == nnkIdent
+  #   let iterVarName = node[0].strVal
+  #   if node[1].kind == nnkInfix:
+  #     case node[1][0].strVal
+  #     of "..<":
+  #       # Init start of loop variable.
+  #       result.add(processBody(node[1][1]))
+  #       result.add initLocalsSet(iterVarName)
   else:
     assert false, $node.kind
 
@@ -237,13 +356,15 @@ macro compileDefinedFunctions*(): untyped =
     echo treeRepr(node)
     let exported = getExportWasm(node.pragma, name)
     let (params, retType) = processParams(node.params)
-    let children = processBody(node.body)
+    var locals: seq[WatNode]
+    let children = processBody(node.body, locals)
     var watNode = WatNode(
       kind: Func,
       funcId: some(name),
       `export`: exported,
       params: params,
       result: retType,
+      locals: locals,
       children: children,
     )
 
