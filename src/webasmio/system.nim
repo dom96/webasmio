@@ -10,84 +10,60 @@ type
 
 proc `+`*(lhs, rhs: int32): int32 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (i32.add)
+    (i32.add (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `-`*(lhs, rhs: int32): int32 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (i32.sub)
+    (i32.sub (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `*`*(lhs, rhs: int32): int32 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (i32.mul)
+    (i32.mul (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `+`*(lhs, rhs: int64): int64 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (i64.add)
+    (i64.add (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `-`*(lhs, rhs: int64): int64 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (i64.sub)
+    (i64.sub (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `*`*(lhs, rhs: int64): int64 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (i64.mul)
+    (i64.mul (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `+`*(lhs, rhs: float64): float64 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (f64.add)
+    (f64.add (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `-`*(lhs, rhs: float64): float64 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (f64.sub)
+    (f64.sub (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `*`*(lhs, rhs: float64): float64 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (f64.mul)
+    (f64.mul (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `+`*(lhs, rhs: float32): float32 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (f32.add)
+    (f32.add (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `-`*(lhs, rhs: float32): float32 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (f32.sub)
+    (f32.sub (local.get $lhs) (local.get $rhs))
   """.}
 
 proc `*`*(lhs, rhs: float32): float32 {.wasm.} =
   {.emit: """
-    (local.get $lhs)
-    (local.get $rhs)
-    (f32.mul)
+    (f32.mul (local.get $lhs) (local.get $rhs))
   """.}
