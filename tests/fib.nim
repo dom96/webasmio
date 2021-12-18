@@ -1,4 +1,4 @@
-# nim js --out:.\tests\fib.js .\tests\fib
+# nim js --out:./tests/fib.js ./tests/fib
 
 from system import nil
 import webasmio

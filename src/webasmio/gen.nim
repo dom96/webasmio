@@ -458,9 +458,9 @@ proc processWasmProc(node: NimNode): NimNode =
       )
     )
     hint("Webasmio: Generated stub " & name)
+    echo(result.toStrLit)
   else:
     result = newEmptyNode()
-  echo(result.toStrLit)
 
 proc processWasmIterator(node: NimNode): NimNode =
   echo treeRepr(node)
@@ -483,10 +483,10 @@ macro compileDefinedFunctions*(): untyped =
   var watModule = WatNode(
     kind: Module,
   )
+
   for node in definedFunctions:
     let name = $node.name
     hint("Webasmio: Compiling " & name)
-    echo treeRepr(node)
     let exported = getExportWasm(node.pragma, name)
     let (params, retType) = processParams(node.params)
     var locals: seq[WatNode]
@@ -508,6 +508,7 @@ macro compileDefinedFunctions*(): untyped =
     )
 
     watModule.children.add(watNode)
+
   var text = ""
   toWAT(watModule, text, newline=true)
   echo(text)

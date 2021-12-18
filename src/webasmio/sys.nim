@@ -1,3 +1,4 @@
+from system import bool
 import gen
 
 type
@@ -7,6 +8,8 @@ type
   float64* {.magic: Float.}   ## 64 bit floating point type.
 
 # TODO: Get rid of the repetition in this code.
+
+# Reference: https://webassembly.github.io/spec/core/appendix/index-instructions.html
 
 # Functions dealing with numbers.
 
@@ -102,9 +105,14 @@ proc `!=`*(lhs, rhs: int32): bool {.wasm.} =
     (i32.ne (local.get $lhs) (local.get $rhs))
   """.}
 
+proc `<`*(lhs, rhs: int64): bool {.wasm.} =
+  {.emit: """
+    (i64.lt_s (local.get $lhs) (local.get $rhs))
+  """.}
+
 # Iterators.
 iterator `..<`*(a, b: int64): int64 {.inline, wasm.} =
   var i = a
   while i < b:
     yield i
-    i = system.`+`(i, 1) # TODO: Rename this module so we can exclude the real `system`
+    i = sys.`+`(i, 1)
