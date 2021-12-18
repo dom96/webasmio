@@ -26,27 +26,54 @@
             return b;
         }
 
-        var suite = new Benchmark.Suite;
-        console.log(fib_webasm(40));
-        // add tests
-        suite.add('webasm', function() {
-            fib_webasm(40);
-        })
-        // .add('js', function() {
-        //     fib_js(40);
-        // })
-        .add('js_native', function() {
-            fib_js_native(40);
-        })
-        // add listeners
-        .on('cycle', function(event) {
-        console.log(String(event.target));
-        })
-        .on('complete', function() {
-        console.log('Fastest is ' + this.filter('fastest').map('name'));
-        })
-        // run async
-        .run({ 'async': true });
+        // TODO: Grab the wasm C from and bench against it https://takahirox.github.io/WebAssembly-benchmark/
+        function fib_bench_js_native(count, n) {
+            var i = 0
+            while (i < count) {
+                let _ = fib_js_native(n)
+                i = i + 1
+            }
+        }
+
+        // Verify that the code works.
+        let result = fib_webasm(40);
+        console.log(result);
+        console.assert(result == 165580141)
+
+        // Benchmark in-wasm/in-js for most reliable numbers.
+        let start = performance.now();
+        fib_bench(10000000, 40);
+        let end = performance.now();
+        console.log(`WASM took ${end - start} milliseconds`);
+
+        start = performance.now();
+        fib_bench_js_native(10000000, 40);
+        end = performance.now();
+        console.log(`JS took ${end - start} milliseconds`);
+
+        if (false) {
+            // Benchmark using JS framework:
+            var suite = new Benchmark.Suite;
+            // add tests
+            suite.add('webasm', function() {
+                fib_webasm(40);
+            })
+            // .add('js', function() {
+            //     fib_js(40);
+            // })
+            .add('js_native', function() {
+                fib_js_native(40);
+            })
+            // add listeners
+            .on('cycle', function(event) {
+            console.log(String(event.target));
+            })
+            .on('complete', function() {
+            console.log('Fastest is ' + this.filter('fastest').map('name'));
+            })
+            // run async
+            .run({ 'async': true });
+        }
 
     </script>
   </head>
