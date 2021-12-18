@@ -464,10 +464,17 @@ proc processWasmProc(node: NimNode): NimNode =
         newTree(nnkExprColonExpr, newIdentNode("exportc"), newStrLitNode(name))
       )
     )
-    hint("Webasmio: Generated stub " & name)
+    hint("Webasmio: Generated exportc stub " & name)
     echo(result.toStrLit)
   else:
-    result = newEmptyNode()
+    hint("Webasmio: Generated dummy stub " & name)
+    result = newProc(
+      name = node.name,
+      params = toSeq(node.params.children),
+      body = newTree(nnkDiscardStmt, newEmptyNode()),
+      pragmas = newEmptyNode()
+    )
+    # echo(treeRepr(result))
 
 proc processWasmIterator(node: NimNode): NimNode =
   echo treeRepr(node)
