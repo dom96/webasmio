@@ -134,6 +134,10 @@ proc toWAT(node: WatNode, result: var string, indent = 0, newline=false) =
   if node.kind notin {Emit}:
     result.add ")"
 
+proc `$`(node: WatNode): string =
+  result = ""
+  toWAT(node, result)
+
 proc getExportWasm(pragma: NimNode, procName: string): Option[WatNode] =
   for child in pragma:
     if child.kind == nnkExprColonExpr:
@@ -450,7 +454,10 @@ proc processWasmProc(node: NimNode): NimNode =
   # If this has been exported then we create a JS stub.
   if exported.isSome():
     result = newProc(
-      name = newIdentNode(name & "_js_stub"),
+      name = newIdentNode(
+        name &
+        (when (NimMajor, NimMinor, NimPatch) >= (1, 4, 0): "" else: "_js_stub")
+      ),
       params = toSeq(node.params.children),
       body = generateJsWasmCall(name, node.params),
       pragmas = newTree(nnkPragma,
@@ -491,6 +498,9 @@ macro compileDefinedFunctions*(): untyped =
     let (params, retType) = processParams(node.params)
     var locals: seq[WatNode]
     var children = processBody(node.body, locals)
+    if name == "fib_bench":
+      for child in children:
+        echo((child))
     if node.len > 7 and node[7].kind != nnkEmpty:
       locals.add(initLocal(node[7]))
       # Hack: We assume that we do not need to push the `result` var onto the

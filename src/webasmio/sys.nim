@@ -111,8 +111,9 @@ proc `<`*(lhs, rhs: int64): bool {.wasm.} =
   """.}
 
 # Iterators.
-iterator `..<`*(a, b: int64): int64 {.inline, wasm.} =
-  var i = a
-  while i < b:
-    yield i
-    i = sys.`+`(i, 1)
+when false:
+  iterator `..<`*(a, b: int64): int64 {.inline, wasm.} =
+    var i = a
+    while i < b:
+      yield i
+      i = sys.`+`(i, 1)
